@@ -42,6 +42,12 @@ contract Project {
         uint256 timestamp
     );
 
+    event AuctionCancelled(
+        uint256 indexed auctionId,
+        address indexed seller,
+        uint256 timestamp
+    );
+
     modifier onlyActiveBid(uint256 _auctionId) {
         require(auctions[_auctionId].active, "Auction is not active");
         require(block.timestamp < auctions[_auctionId].endTime, "Auction has ended");
@@ -147,6 +153,50 @@ contract Project {
 
         bids[_auctionId][msg.sender] = 0;
         payable(msg.sender).transfer(bidAmount);
+    }
+
+    /**
+     * @dev Cancel an auction (only by seller, only if no bids placed)
+     * @param _auctionId ID of the auction to cancel
+     */
+    function cancelAuction(uint256 _auctionId) external onlyAuctionSeller(_auctionId) {
+        Auction storage auction = auctions[_auctionId];
+        require(auction.active, "Auction is not active");
+        require(auction.currentBidder == address(0), "Cannot cancel auction with existing bids");
+        require(!auction.claimed, "Auction already claimed");
+
+        auction.active = false;
+        auction.claimed = true;
+
+        emit AuctionCancelled(_auctionId, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Get all active auctions
+     * @return activeAuctionIds Array of active auction IDs
+     */
+    function getActiveAuctions() external view returns (uint256[] memory activeAuctionIds) {
+        // First, count active auctions
+        uint256 activeCount = 0;
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].active && block.timestamp < auctions[i].endTime) {
+                activeCount++;
+            }
+        }
+
+        // Create array with exact size
+        activeAuctionIds = new uint256[](activeCount);
+        uint256 index = 0;
+        
+        // Fill array with active auction IDs
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].active && block.timestamp < auctions[i].endTime) {
+                activeAuctionIds[index] = i;
+                index++;
+            }
+        }
+
+        return activeAuctionIds;
     }
 
     /**
