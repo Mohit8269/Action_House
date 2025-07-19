@@ -48,6 +48,12 @@ contract Project {
         uint256 timestamp
     );
 
+    event AuctionExtended(
+        uint256 indexed auctionId,
+        uint256 newEndTime,
+        uint256 timestamp
+    );
+
     modifier onlyActiveBid(uint256 _auctionId) {
         require(auctions[_auctionId].active, "Auction is not active");
         require(block.timestamp < auctions[_auctionId].endTime, "Auction has ended");
@@ -241,5 +247,56 @@ contract Project {
      */
     function isAuctionActive(uint256 _auctionId) external view returns (bool) {
         return auctions[_auctionId].active && block.timestamp < auctions[_auctionId].endTime;
+    }
+
+    // ========== NEW FUNCTIONS ==========
+
+    /**
+     * @dev Get all auctions created by a specific seller
+     * @param _seller Address of the seller
+     * @return sellerAuctionIds Array of auction IDs created by the seller
+     */
+    function getAuctionsBySeller(address _seller) external view returns (uint256[] memory sellerAuctionIds) {
+        require(_seller != address(0), "Invalid seller address");
+        
+        // First, count auctions by seller
+        uint256 sellerCount = 0;
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].seller == _seller) {
+                sellerCount++;
+            }
+        }
+
+        // Create array with exact size
+        sellerAuctionIds = new uint256[](sellerCount);
+        uint256 index = 0;
+        
+        // Fill array with seller's auction IDs
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].seller == _seller) {
+                sellerAuctionIds[index] = i;
+                index++;
+            }
+        }
+
+        return sellerAuctionIds;
+    }
+
+    /**
+     * @dev Extend auction duration (only by seller, before auction ends)
+     * @param _auctionId ID of the auction to extend
+     * @param _additionalTime Additional time to add (in seconds)
+     */
+    function extendAuction(uint256 _auctionId, uint256 _additionalTime) external onlyAuctionSeller(_auctionId) {
+        Auction storage auction = auctions[_auctionId];
+        require(auction.active, "Auction is not active");
+        require(!auction.claimed, "Auction already claimed");
+        require(_additionalTime > 0, "Additional time must be greater than 0");
+        require(_additionalTime <= 7 days, "Cannot extend more than 7 days at once");
+        require(block.timestamp < auction.endTime, "Cannot extend ended auction");
+
+        auction.endTime += _additionalTime;
+
+        emit AuctionExtended(_auctionId, auction.endTime, block.timestamp);
     }
 }
