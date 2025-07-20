@@ -249,7 +249,7 @@ contract Project {
         return auctions[_auctionId].active && block.timestamp < auctions[_auctionId].endTime;
     }
 
-    // ========== NEW FUNCTIONS ==========
+    // ========== EXISTING FUNCTIONS ==========
 
     /**
      * @dev Get all auctions created by a specific seller
@@ -298,5 +298,84 @@ contract Project {
         auction.endTime += _additionalTime;
 
         emit AuctionExtended(_auctionId, auction.endTime, block.timestamp);
+    }
+
+    // ========== NEW FUNCTIONS ==========
+
+    /**
+     * @dev Get all auctions that a specific address has bid on
+     * @param _bidder Address of the bidder
+     * @return bidderAuctionIds Array of auction IDs the bidder has participated in
+     */
+    function getAuctionsByBidder(address _bidder) external view returns (uint256[] memory bidderAuctionIds) {
+        require(_bidder != address(0), "Invalid bidder address");
+        
+        // First, count auctions where bidder participated
+        uint256 bidderCount = 0;
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].currentBidder == _bidder || bids[i][_bidder] > 0) {
+                bidderCount++;
+            }
+        }
+
+        // Create array with exact size
+        bidderAuctionIds = new uint256[](bidderCount);
+        uint256 index = 0;
+        
+        // Fill array with auction IDs where bidder participated
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].currentBidder == _bidder || bids[i][_bidder] > 0) {
+                bidderAuctionIds[index] = i;
+                index++;
+            }
+        }
+
+        return bidderAuctionIds;
+    }
+
+    /**
+     * @dev Get detailed auction statistics
+     * @return totalAuctions Total number of auctions created
+     * @return activeAuctions Number of currently active auctions
+     * @return completedAuctions Number of completed auctions with winners
+     * @return cancelledAuctions Number of cancelled auctions
+     * @return totalVolume Total trading volume across all auctions
+     * @return averageBid Average winning bid amount
+     */
+    function getAuctionStatistics() external view returns (
+        uint256 totalAuctions,
+        uint256 activeAuctions,
+        uint256 completedAuctions,
+        uint256 cancelledAuctions,
+        uint256 totalVolume,
+        uint256 averageBid
+    ) {
+        totalAuctions = auctionCounter;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            Auction storage auction = auctions[i];
+            
+            if (auction.active && block.timestamp < auction.endTime) {
+                activeAuctions++;
+            } else if (!auction.active && auction.claimed && auction.currentBidder != address(0)) {
+                completedAuctions++;
+                totalVolume += auction.currentBid;
+            } else if (!auction.active && auction.claimed && auction.currentBidder == address(0)) {
+                cancelledAuctions++;
+            }
+        }
+        
+        if (completedAuctions > 0) {
+            averageBid = totalVolume / completedAuctions;
+        }
+        
+        return (
+            totalAuctions,
+            activeAuctions,
+            completedAuctions,
+            cancelledAuctions,
+            totalVolume,
+            averageBid
+        );
     }
 }
