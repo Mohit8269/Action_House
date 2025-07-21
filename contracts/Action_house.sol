@@ -378,4 +378,118 @@ contract Project {
             averageBid
         );
     }
+
+    // ========== NEWLY ADDED FUNCTIONS ==========
+
+    /**
+     * @dev Get auctions ending soon (within next 24 hours)
+     * @return endingSoonIds Array of auction IDs ending within 24 hours
+     * @return timeRemaining Array of seconds remaining for each auction
+     */
+    function getAuctionsEndingSoon() external view returns (
+        uint256[] memory endingSoonIds,
+        uint256[] memory timeRemaining
+    ) {
+        uint256 oneDayFromNow = block.timestamp + 24 hours;
+        
+        // First, count auctions ending soon
+        uint256 endingSoonCount = 0;
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].active && 
+                block.timestamp < auctions[i].endTime && 
+                auctions[i].endTime <= oneDayFromNow) {
+                endingSoonCount++;
+            }
+        }
+
+        // Create arrays with exact size
+        endingSoonIds = new uint256[](endingSoonCount);
+        timeRemaining = new uint256[](endingSoonCount);
+        uint256 index = 0;
+        
+        // Fill arrays with auction data
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].active && 
+                block.timestamp < auctions[i].endTime && 
+                auctions[i].endTime <= oneDayFromNow) {
+                endingSoonIds[index] = i;
+                timeRemaining[index] = auctions[i].endTime - block.timestamp;
+                index++;
+            }
+        }
+
+        return (endingSoonIds, timeRemaining);
+    }
+
+    /**
+     * @dev Get user profile with bidding and selling history
+     * @param _user Address of the user
+     * @return userAuctions Array of auction IDs created by user
+     * @return userBids Array of auction IDs user has bid on
+     * @return totalSold Number of successfully sold auctions
+     * @return totalBought Number of auctions won by user
+     * @return totalRevenue Total ETH earned from selling
+     * @return totalSpent Total ETH spent on winning bids
+     */
+    function getUserProfile(address _user) external view returns (
+        uint256[] memory userAuctions,
+        uint256[] memory userBids,
+        uint256 totalSold,
+        uint256 totalBought,
+        uint256 totalRevenue,
+        uint256 totalSpent
+    ) {
+        require(_user != address(0), "Invalid user address");
+        
+        // Count user's auctions and bids
+        uint256 auctionCount = 0;
+        uint256 bidCount = 0;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].seller == _user) {
+                auctionCount++;
+                // Check if auction was successfully sold
+                if (!auctions[i].active && auctions[i].claimed && auctions[i].currentBidder != address(0)) {
+                    totalSold++;
+                    totalRevenue += auctions[i].currentBid;
+                }
+            }
+            
+            if (auctions[i].currentBidder == _user || bids[i][_user] > 0) {
+                bidCount++;
+                // Check if user won this auction
+                if (!auctions[i].active && auctions[i].claimed && auctions[i].currentBidder == _user) {
+                    totalBought++;
+                    totalSpent += auctions[i].currentBid;
+                }
+            }
+        }
+        
+        // Create and fill arrays
+        userAuctions = new uint256[](auctionCount);
+        userBids = new uint256[](bidCount);
+        uint256 auctionIndex = 0;
+        uint256 bidIndex = 0;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].seller == _user) {
+                userAuctions[auctionIndex] = i;
+                auctionIndex++;
+            }
+            
+            if (auctions[i].currentBidder == _user || bids[i][_user] > 0) {
+                userBids[bidIndex] = i;
+                bidIndex++;
+            }
+        }
+        
+        return (
+            userAuctions,
+            userBids,
+            totalSold,
+            totalBought,
+            totalRevenue,
+            totalSpent
+        );
+    }
 }
