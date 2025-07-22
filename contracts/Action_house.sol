@@ -492,4 +492,157 @@ contract Project {
             totalSpent
         );
     }
+
+    // ========== TWO NEW ADDITIONAL FUNCTIONS ==========
+
+    /**
+     * @dev Get top auctions by current bid amount
+     * @param _limit Maximum number of auctions to return
+     * @return topAuctionIds Array of auction IDs sorted by highest bids
+     * @return topBids Array of corresponding bid amounts
+     */
+    function getTopAuctionsByBid(uint256 _limit) external view returns (
+        uint256[] memory topAuctionIds,
+        uint256[] memory topBids
+    ) {
+        require(_limit > 0, "Limit must be greater than 0");
+        
+        // Get all active auctions first
+        uint256[] memory activeIds = new uint256[](auctionCounter);
+        uint256[] memory activeBids = new uint256[](auctionCounter);
+        uint256 activeCount = 0;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (auctions[i].active && block.timestamp < auctions[i].endTime && auctions[i].currentBid > 0) {
+                activeIds[activeCount] = i;
+                activeBids[activeCount] = auctions[i].currentBid;
+                activeCount++;
+            }
+        }
+        
+        // Sort by bid amount (bubble sort for simplicity)
+        for (uint256 i = 0; i < activeCount - 1; i++) {
+            for (uint256 j = 0; j < activeCount - i - 1; j++) {
+                if (activeBids[j] < activeBids[j + 1]) {
+                    // Swap bids
+                    uint256 tempBid = activeBids[j];
+                    activeBids[j] = activeBids[j + 1];
+                    activeBids[j + 1] = tempBid;
+                    
+                    // Swap IDs
+                    uint256 tempId = activeIds[j];
+                    activeIds[j] = activeIds[j + 1];
+                    activeIds[j + 1] = tempId;
+                }
+            }
+        }
+        
+        // Return top auctions up to limit
+        uint256 returnCount = activeCount > _limit ? _limit : activeCount;
+        topAuctionIds = new uint256[](returnCount);
+        topBids = new uint256[](returnCount);
+        
+        for (uint256 i = 0; i < returnCount; i++) {
+            topAuctionIds[i] = activeIds[i];
+            topBids[i] = activeBids[i];
+        }
+        
+        return (topAuctionIds, topBids);
+    }
+
+    /**
+     * @dev Search auctions by item name (partial matching)
+     * @param _searchTerm The search term to look for in item names
+     * @param _activeOnly If true, only return active auctions
+     * @return matchingIds Array of auction IDs that match the search
+     * @return matchingNames Array of corresponding item names
+     */
+    function searchAuctionsByName(string memory _searchTerm, bool _activeOnly) external view returns (
+        uint256[] memory matchingIds,
+        string[] memory matchingNames
+    ) {
+        require(bytes(_searchTerm).length > 0, "Search term cannot be empty");
+        
+        bytes memory searchBytes = bytes(_searchTerm);
+        uint256 matchCount = 0;
+        
+        // First pass: count matches
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (_activeOnly && (!auctions[i].active || block.timestamp >= auctions[i].endTime)) {
+                continue;
+            }
+            
+            bytes memory nameBytes = bytes(auctions[i].itemName);
+            if (_containsSubstring(nameBytes, searchBytes)) {
+                matchCount++;
+            }
+        }
+        
+        // Second pass: collect matches
+        matchingIds = new uint256[](matchCount);
+        matchingNames = new string[](matchCount);
+        uint256 index = 0;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (_activeOnly && (!auctions[i].active || block.timestamp >= auctions[i].endTime)) {
+                continue;
+            }
+            
+            bytes memory nameBytes = bytes(auctions[i].itemName);
+            if (_containsSubstring(nameBytes, searchBytes)) {
+                matchingIds[index] = i;
+                matchingNames[index] = auctions[i].itemName;
+                index++;
+            }
+        }
+        
+        return (matchingIds, matchingNames);
+    }
+
+    /**
+     * @dev Helper function to check if a string contains a substring (case-insensitive)
+     * @param _text The text to search in
+     * @param _substring The substring to search for
+     * @return found True if substring is found in text
+     */
+    function _containsSubstring(bytes memory _text, bytes memory _substring) private pure returns (bool found) {
+        if (_substring.length > _text.length) {
+            return false;
+        }
+        
+        if (_substring.length == 0) {
+            return true;
+        }
+        
+        for (uint256 i = 0; i <= _text.length - _substring.length; i++) {
+            bool match = true;
+            for (uint256 j = 0; j < _substring.length; j++) {
+                // Convert to lowercase for case-insensitive comparison
+                bytes1 textChar = _toLower(_text[i + j]);
+                bytes1 subChar = _toLower(_substring[j]);
+                
+                if (textChar != subChar) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+
+    /**
+     * @dev Helper function to convert a character to lowercase
+     * @param _char The character to convert
+     * @return The lowercase version of the character
+     */
+    function _toLower(bytes1 _char) private pure returns (bytes1) {
+        if (_char >= 0x41 && _char <= 0x5A) {
+            return bytes1(uint8(_char) + 32);
+        }
+        return _char;
+    }
 }
