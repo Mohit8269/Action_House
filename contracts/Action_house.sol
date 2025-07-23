@@ -599,6 +599,117 @@ contract Project {
         return (matchingIds, matchingNames);
     }
 
+    // ========== TWO ADDITIONAL NEW FUNCTIONS ==========
+
+    /**
+     * @dev Get auctions within a specific price range
+     * @param _minPrice Minimum current bid amount
+     * @param _maxPrice Maximum current bid amount (0 for no upper limit)
+     * @param _activeOnly If true, only return active auctions
+     * @return priceRangeIds Array of auction IDs within the price range
+     * @return priceRangeBids Array of corresponding current bid amounts
+     */
+    function getAuctionsByPriceRange(
+        uint256 _minPrice,
+        uint256 _maxPrice,
+        bool _activeOnly
+    ) external view returns (
+        uint256[] memory priceRangeIds,
+        uint256[] memory priceRangeBids
+    ) {
+        require(_minPrice >= 0, "Minimum price cannot be negative");
+        require(_maxPrice == 0 || _maxPrice >= _minPrice, "Maximum price must be greater than minimum price");
+        
+        uint256 matchCount = 0;
+        
+        // First pass: count matches
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (_activeOnly && (!auctions[i].active || block.timestamp >= auctions[i].endTime)) {
+                continue;
+            }
+            
+            uint256 currentBid = auctions[i].currentBid;
+            // If no bids yet, use starting price
+            if (currentBid == 0) {
+                currentBid = auctions[i].startingPrice;
+            }
+            
+            bool inRange = currentBid >= _minPrice && (_maxPrice == 0 || currentBid <= _maxPrice);
+            if (inRange) {
+                matchCount++;
+            }
+        }
+        
+        // Second pass: collect matches
+        priceRangeIds = new uint256[](matchCount);
+        priceRangeBids = new uint256[](matchCount);
+        uint256 index = 0;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            if (_activeOnly && (!auctions[i].active || block.timestamp >= auctions[i].endTime)) {
+                continue;
+            }
+            
+            uint256 currentBid = auctions[i].currentBid;
+            // If no bids yet, use starting price
+            if (currentBid == 0) {
+                currentBid = auctions[i].startingPrice;
+            }
+            
+            bool inRange = currentBid >= _minPrice && (_maxPrice == 0 || currentBid <= _maxPrice);
+            if (inRange) {
+                priceRangeIds[index] = i;
+                priceRangeBids[index] = currentBid;
+                index++;
+            }
+        }
+        
+        return (priceRangeIds, priceRangeBids);
+    }
+
+    /**
+     * @dev Batch operation to get multiple auction details at once
+     * @param _auctionIds Array of auction IDs to retrieve
+     * @return sellers Array of seller addresses
+     * @return itemNames Array of item names
+     * @return currentBids Array of current bid amounts
+     * @return endTimes Array of auction end times
+     * @return activeStates Array of active status for each auction
+     */
+    function getBatchAuctionDetails(uint256[] memory _auctionIds) external view returns (
+        address[] memory sellers,
+        string[] memory itemNames,
+        uint256[] memory currentBids,
+        uint256[] memory endTimes,
+        bool[] memory activeStates
+    ) {
+        require(_auctionIds.length > 0, "Auction IDs array cannot be empty");
+        require(_auctionIds.length <= 50, "Cannot retrieve more than 50 auctions at once");
+        
+        uint256 length = _auctionIds.length;
+        sellers = new address[](length);
+        itemNames = new string[](length);
+        currentBids = new uint256[](length);
+        endTimes = new uint256[](length);
+        activeStates = new bool[](length);
+        
+        for (uint256 i = 0; i < length; i++) {
+            uint256 auctionId = _auctionIds[i];
+            require(auctionId < auctionCounter, "Invalid auction ID");
+            
+            Auction storage auction = auctions[auctionId];
+            sellers[i] = auction.seller;
+            itemNames[i] = auction.itemName;
+            currentBids[i] = auction.currentBid;
+            endTimes[i] = auction.endTime;
+            activeStates[i] = auction.active && block.timestamp < auction.endTime;
+        }
+        
+        return (sellers, itemNames, currentBids, endTimes, activeStates);
+    }
+
+    // ========== HELPER FUNCTIONS ==========
+
     /**
      * @dev Helper function to check if a string contains a substring (case-insensitive)
      * @param _text The text to search in
