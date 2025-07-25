@@ -787,6 +787,4 @@ contract Project {
         
         for (uint256 i = 0; i < auctionCounter; i++) {
             if (!auctions[i].active && auctions[i].claimed && auctions[i].currentBidder == _user) {
-                totalSpent += auctions[i].currentBid;
-                completedBids++;
-            }
+                totalSp
