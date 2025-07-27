@@ -599,6 +599,24 @@ contract Project {
         return (matchingIds, matchingNames);
     }
 
+    // Helper function for substring searching
+    function _containsSubstring(bytes memory _text, bytes memory _pattern) private pure returns (bool) {
+        if (_pattern.length > _text.length) return false;
+        if (_pattern.length == 0) return true;
+        
+        for (uint256 i = 0; i <= _text.length - _pattern.length; i++) {
+            bool found = true;
+            for (uint256 j = 0; j < _pattern.length; j++) {
+                if (_text[i + j] != _pattern[j]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) return true;
+        }
+        return false;
+    }
+
     // ========== TWO ADDITIONAL NEW FUNCTIONS ==========
 
     /**
@@ -787,4 +805,226 @@ contract Project {
         
         for (uint256 i = 0; i < auctionCounter; i++) {
             if (!auctions[i].active && auctions[i].claimed && auctions[i].currentBidder == _user) {
-                totalSp
+                totalSpent += auctions[i].currentBid;
+                completedBids++;
+            }
+        }
+        
+        uint256 avgBidRange = completedBids > 0 ? totalSpent / completedBids : 1 ether;
+        
+        // Collect recommendations
+        uint256[] memory tempIds = new uint256[](_maxResults);
+        string[] memory tempNames = new string[](_maxResults);
+        uint256[] memory tempPrices = new uint256[](_maxResults);
+        uint256[] memory tempReasons = new uint256[](_maxResults);
+        uint256 recommendationCount = 0;
+        
+        for (uint256 i = 0; i < auctionCounter && recommendationCount < _maxResults; i++) {
+            if (!auctions[i].active || block.timestamp >= auctions[i].endTime || auctions[i].seller == _user) {
+                continue;
+            }
+            
+            uint256 currentPrice = auctions[i].currentBid > 0 ? auctions[i].currentBid : auctions[i].startingPrice;
+            uint256 reason = 0;
+            
+            // Check if price is in user's range (within 50% of average)
+            if (completedBids > 0 && currentPrice >= avgBidRange / 2 && currentPrice <= avgBidRange * 2) {
+                reason = 1; // Price range match
+            }
+            // Check if ending soon (within 6 hours)
+            else if (auctions[i].endTime <= block.timestamp + 6 hours) {
+                reason = 3; // Ending soon
+            }
+            // Default recommendation for active auctions
+            else {
+                reason = 2; // General recommendation
+            }
+            
+            if (reason > 0) {
+                tempIds[recommendationCount] = i;
+                tempNames[recommendationCount] = auctions[i].itemName;
+                tempPrices[recommendationCount] = currentPrice;
+                tempReasons[recommendationCount] = reason;
+                recommendationCount++;
+            }
+        }
+        
+        // Create final arrays with actual size
+        recommendedIds = new uint256[](recommendationCount);
+        recommendedNames = new string[](recommendationCount);
+        recommendedPrices = new uint256[](recommendationCount);
+        matchReasons = new uint256[](recommendationCount);
+        
+        for (uint256 i = 0; i < recommendationCount; i++) {
+            recommendedIds[i] = tempIds[i];
+            recommendedNames[i] = tempNames[i];
+            recommendedPrices[i] = tempPrices[i];
+            matchReasons[i] = tempReasons[i];
+        }
+        
+        return (recommendedIds, recommendedNames, recommendedPrices, matchReasons);
+    }
+
+    // ========== TWO MOST RECENT FUNCTIONS ==========
+
+    /**
+     * @dev Emergency pause/unpause functionality for critical situations
+     * @param _paused True to pause all auction activities, false to unpause
+     * @dev Only contract owner can call this (simplified - in production, use proper access control)
+     */
+    mapping(address => bool) public authorizedOperators;
+    bool public contractPaused = false;
+    
+    modifier whenNotPaused() {
+        require(!contractPaused, "Contract is paused");
+        _;
+    }
+    
+    modifier onlyAuthorized() {
+        require(authorizedOperators[msg.sender], "Not authorized");
+        _;
+    }
+    
+    function setContractPause(bool _paused) external onlyAuthorized {
+        contractPaused = _paused;
+    }
+    
+    function setAuthorizedOperator(address _operator, bool _authorized) external {
+        // In production, this should have proper owner controls
+        require(msg.sender == tx.origin, "Simple authorization check");
+        authorizedOperators[_operator] = _authorized;
+    }
+
+    /**
+     * @dev Get comprehensive auction analytics and market insights
+     * @return marketData Struct containing detailed market analytics
+     */
+    struct MarketAnalytics {
+        uint256 totalActiveAuctions;
+        uint256 totalCompletedAuctions;
+        uint256 averageAuctionDuration;
+        uint256 highestBidEver;
+        uint256 lowestSuccessfulBid;
+        uint256 totalMarketVolume;
+        uint256 averageBidsPerAuction;
+        uint256 successRate; // Percentage of auctions that received bids
+        address mostActiveSellerAddr;
+        uint256 mostActiveSellerCount;
+        address mostActiveBidderAddr;
+        uint256 mostActiveBidderCount;
+    }
+    
+    function getMarketAnalytics() external view returns (MarketAnalytics memory marketData) {
+        uint256 totalBids = 0;
+        uint256 completedWithBids = 0;
+        uint256 totalDuration = 0;
+        uint256 highestBid = 0;
+        uint256 lowestSuccessful = type(uint256).max;
+        
+        // Track most active users
+        mapping(address => uint256) storage sellerCounts;
+        mapping(address => uint256) storage bidderCounts;
+        
+        for (uint256 i = 0; i < auctionCounter; i++) {
+            Auction storage auction = auctions[i];
+            
+            // Count active auctions
+            if (auction.active && block.timestamp < auction.endTime) {
+                marketData.totalActiveAuctions++;
+            }
+            
+            // Count completed auctions
+            if (!auction.active && auction.claimed) {
+                marketData.totalCompletedAuctions++;
+                
+                if (auction.currentBidder != address(0)) {
+                    completedWithBids++;
+                    marketData.totalMarketVolume += auction.currentBid;
+                    
+                    // Track highest and lowest bids
+                    if (auction.currentBid > highestBid) {
+                        highestBid = auction.currentBid;
+                    }
+                    if (auction.currentBid < lowestSuccessful) {
+                        lowestSuccessful = auction.currentBid;
+                    }
+                    
+                    // Calculate duration for completed auctions
+                    totalDuration += AUCTION_DURATION;
+                    totalBids++;
+                }
+            }
+        }
+        
+        // Calculate averages and rates
+        if (marketData.totalCompletedAuctions > 0) {
+            marketData.averageAuctionDuration = totalDuration / marketData.totalCompletedAuctions;
+            marketData.successRate = (completedWithBids * 100) / marketData.totalCompletedAuctions;
+        }
+        
+        if (completedWithBids > 0) {
+            marketData.averageBidsPerAuction = totalBids / completedWithBids;
+        }
+        
+        marketData.highestBidEver = highestBid;
+        marketData.lowestSuccessfulBid = lowestSuccessful == type(uint256).max ? 0 : lowestSuccessful;
+        
+        // Note: Most active seller/bidder tracking would require additional storage
+        // This is a simplified version
+        marketData.mostActiveSellerAddr = address(0);
+        marketData.mostActiveSellerCount = 0;
+        marketData.mostActiveBidderAddr = address(0);
+        marketData.mostActiveBidderCount = 0;
+        
+        return marketData;
+    }
+
+    /**
+     * @dev Automated auction settlement for expired auctions
+     * @param _auctionIds Array of auction IDs to settle
+     * @return settledCount Number of auctions successfully settled
+     * @return totalFeesCollected Total fees collected from settlements
+     */
+    function batchSettleAuctions(uint256[] memory _auctionIds) external returns (
+        uint256 settledCount,
+        uint256 totalFeesCollected
+    ) {
+        require(_auctionIds.length > 0, "No auction IDs provided");
+        require(_auctionIds.length <= 10, "Cannot settle more than 10 auctions at once");
+        
+        for (uint256 i = 0; i < _auctionIds.length; i++) {
+            uint256 auctionId = _auctionIds[i];
+            
+            if (auctionId >= auctionCounter) continue;
+            
+            Auction storage auction = auctions[auctionId];
+            
+            // Check if auction can be settled
+            if (!auction.active || auction.claimed || block.timestamp < auction.endTime) {
+                continue;
+            }
+            
+            // Settle the auction
+            auction.active = false;
+            auction.claimed = true;
+            
+            if (auction.currentBidder != address(0)) {
+                // Calculate settlement fee (1% of winning bid)
+                uint256 settlementFee = auction.currentBid / 100;
+                uint256 sellerAmount = auction.currentBid - settlementFee;
+                
+                // Transfer funds
+                payable(auction.seller).transfer(sellerAmount);
+                totalFeesCollected += settlementFee;
+                
+                emit AuctionEnded(auctionId, auction.currentBidder, auction.currentBid, block.timestamp);
+            } else {
+                emit AuctionEnded(auctionId, address(0), 0, block.timestamp);
+            }
+            
+            settledCount++;
+        }
+        
+        return (settledCount, totalFeesCollected);
+    }
+}
