@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MTL
+// SPDX-License-Identifier: 
 pragma solidity ^0.8.19;
 
 contract Project {
@@ -1028,3 +1028,4 @@ contract Project {
         return (settledCount, totalFeesCollected);
     }
 }
+
